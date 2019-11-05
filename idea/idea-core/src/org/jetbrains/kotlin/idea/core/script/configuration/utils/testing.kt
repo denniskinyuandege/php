@@ -5,17 +5,8 @@
 
 package org.jetbrains.kotlin.idea.core.script.configuration.utils
 
-import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.VirtualFile
-
-import org.jetbrains.kotlin.psi.KtFile
 
 lateinit var rootsIndexerTransaction: (() -> Unit) -> Unit
 var backgroundExecutorNewTaskHook: ((file: VirtualFile, actions: () -> Unit) -> Unit)? = null
 var testScriptConfigurationNotification: Boolean = true
-var psiModificationStampHook: ((file: KtFile) -> Long)? = null
-
-fun getPsiModificationStamp(project: Project, virtualFile: VirtualFile, ktFile: KtFile?): Long? {
-    val actualFile = project.getKtFile(virtualFile, ktFile) ?: return null
-    return psiModificationStampHook?.let { it(actualFile) } ?: actualFile.modificationStamp
-}

@@ -51,6 +51,11 @@ fun VirtualFile.addScriptDependenciesNotificationPanel(
 }
 
 @TestOnly
+fun VirtualFile.hasSuggestedScriptConfiguration(project: Project): Boolean {
+    return FileEditorManager.getInstance(project).getSelectedEditor(this)?.notificationPanel != null
+}
+
+@TestOnly
 fun VirtualFile.applySuggestedScriptConfiguration(project: Project): Boolean {
     val notificationPanel = FileEditorManager.getInstance(project).getSelectedEditor(this)?.notificationPanel
         ?: return false

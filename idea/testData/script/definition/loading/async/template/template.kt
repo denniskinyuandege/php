@@ -6,13 +6,16 @@ import kotlin.script.templates.*
 import java.io.File
 import kotlin.script.experimental.location.*
 
-var counter = java.util.concurrent.atomic.AtomicInteger()
-
 class TestDependenciesResolver : AsyncDependenciesResolver {
     suspend override fun resolveAsync(scriptContents: ScriptContents, environment: Environment): DependenciesResolver.ResolveResult {
+        javaClass.classLoader
+            .loadClass("org.jetbrains.kotlin.idea.script.ScriptConfigurationLoadingTest")
+            .methods.single { it.name == "loadingScriptConfigurationCallback" }
+            .invoke(null)
+
         return ScriptDependencies(
             classpath = listOf(environment["template-classes"] as File),
-            imports = listOf("x" + counter.incrementAndGet())
+            imports = listOf("x_" + scriptContents.text)
         ).asSuccess()
     }
 }
