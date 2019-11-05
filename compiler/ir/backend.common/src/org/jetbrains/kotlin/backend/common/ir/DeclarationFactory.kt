@@ -15,4 +15,6 @@ interface DeclarationFactory {
     fun getOuterThisField(innerClass: IrClass): IrField
     fun getInnerClassConstructorWithOuterThisParameter(innerClassConstructor: IrConstructor): IrConstructor
     fun getFieldForObjectInstance(singleton: IrClass): IrField
+    fun getPrivateFieldForObjectInstance(singleton: IrClass): IrField =
+        getFieldForObjectInstance(singleton)
 }

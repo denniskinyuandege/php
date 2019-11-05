@@ -52,7 +52,10 @@ private class SingletonReferencesLowering(val context: JvmBackendContext) : File
     }
 
     override fun visitGetObjectValue(expression: IrGetObjectValue): IrExpression {
-        val instanceField = context.declarationFactory.getFieldForObjectInstance(expression.symbol.owner)
+        val instanceField = if (allScopes.any { it.irElement == expression.symbol.owner })
+            context.declarationFactory.getPrivateFieldForObjectInstance(expression.symbol.owner)
+        else
+            context.declarationFactory.getFieldForObjectInstance(expression.symbol.owner)
         return IrGetFieldImpl(expression.startOffset, expression.endOffset, instanceField.symbol, expression.type)
     }
 

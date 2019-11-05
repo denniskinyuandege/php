@@ -12,6 +12,7 @@ import org.jetbrains.kotlin.backend.common.descriptors.WrappedValueParameterDesc
 import org.jetbrains.kotlin.backend.common.ir.*
 import org.jetbrains.kotlin.backend.jvm.JvmLoweredDeclarationOrigin
 import org.jetbrains.kotlin.backend.jvm.codegen.MethodSignatureMapper
+import org.jetbrains.kotlin.backend.jvm.codegen.isJvmInterface
 import org.jetbrains.kotlin.builtins.CompanionObjectMapping.isMappedIntrinsicCompanionObject
 import org.jetbrains.kotlin.descriptors.ClassKind
 import org.jetbrains.kotlin.descriptors.Modality
@@ -33,6 +34,7 @@ class JvmDeclarationFactory(
     private val methodSignatureMapper: MethodSignatureMapper
 ) : DeclarationFactory {
     private val singletonFieldDeclarations = HashMap<IrSymbolOwner, IrField>()
+    private val interfaceCompanionFieldDeclarations = HashMap<IrSymbolOwner, IrField>()
     private val outerThisDeclarations = HashMap<IrClass, IrField>()
     private val innerClassConstructors = HashMap<IrConstructor, IrConstructor>()
 
@@ -132,6 +134,23 @@ class JvmDeclarationFactory(
                 parent = if (isNotMappedCompanion) singleton.parent else singleton
             }
         }
+
+    override fun getPrivateFieldForObjectInstance(singleton: IrClass): IrField =
+        if (singleton.isCompanion && singleton.parentAsClass.isJvmInterface)
+            interfaceCompanionFieldDeclarations.getOrPut(singleton) {
+                buildField {
+                    name = Name.identifier("\$\$INSTANCE")
+                    type = singleton.defaultType
+                    origin = IrDeclarationOrigin.FIELD_FOR_OBJECT_INSTANCE
+                    isFinal = true
+                    isStatic = true
+                    visibility = JavaVisibilities.PROTECTED_AND_PACKAGE
+                }.apply {
+                    parent = singleton
+                }
+            }
+        else
+            super.getPrivateFieldForObjectInstance(singleton)
 
     fun getDefaultImplsFunction(interfaceFun: IrSimpleFunction): IrSimpleFunction {
         val parent = interfaceFun.parentAsClass
