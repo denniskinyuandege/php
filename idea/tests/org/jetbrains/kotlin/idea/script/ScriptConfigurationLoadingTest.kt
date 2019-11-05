@@ -7,7 +7,7 @@ package org.jetbrains.kotlin.idea.script
 
 class ScriptConfigurationLoadingTest : AbstractScriptConfigurationLoadingTest() {
     fun testSimple() {
-        loadInitialConfiguration()
+        assertAndLoadInitialConfiguration()
 
         makeChanges("A")
         assertAndDoAllBackgroundTasks()
@@ -17,7 +17,7 @@ class ScriptConfigurationLoadingTest : AbstractScriptConfigurationLoadingTest() 
     }
 
     fun testConcurrentLoadingWhileInQueue() {
-        loadInitialConfiguration()
+        assertAndLoadInitialConfiguration()
 
         makeChanges("A")
         makeChanges("B")
@@ -27,8 +27,30 @@ class ScriptConfigurationLoadingTest : AbstractScriptConfigurationLoadingTest() 
         assertAppliedConfiguration("B")
     }
 
+    fun testConcurrentLoadingWhileInQueueABA() {
+        assertAndLoadInitialConfiguration()
+
+        makeChanges("A")
+        makeChanges("B")
+        makeChanges("A")
+        assertAndDoAllBackgroundTasks()
+        assertSingleLoading()
+        assertAndApplySuggestedConfiguration()
+        assertAppliedConfiguration("A")
+    }
+
+    fun testConcurrentLoadingWhileInQueueABA2() {
+        assertAndLoadInitialConfiguration()
+
+        makeChanges("A")
+        makeChanges("initial")
+        assertAndDoAllBackgroundTasks()
+        assertNoLoading()
+        assertNoSuggestedConfiguration()
+    }
+
     fun testConcurrentLoadingWhileAnotherLoadInProgress() {
-        loadInitialConfiguration()
+        assertAndLoadInitialConfiguration()
 
         makeChanges("A")
         assertDoAllBackgroundTaskAndDoWhileLoading {
@@ -44,8 +66,8 @@ class ScriptConfigurationLoadingTest : AbstractScriptConfigurationLoadingTest() 
         assertAppliedConfiguration("B")
     }
 
-    fun testConcurrentLoadingWhileAnotherLoadInProgress2() {
-        loadInitialConfiguration()
+    fun testConcurrentLoadingWhileAnotherLoadInProgressABA() {
+        assertAndLoadInitialConfiguration()
 
         makeChanges("A")
         assertDoAllBackgroundTaskAndDoWhileLoading {
@@ -62,8 +84,8 @@ class ScriptConfigurationLoadingTest : AbstractScriptConfigurationLoadingTest() 
         assertAppliedConfiguration("A")
     }
 
-    fun testConcurrentLoadingWhileAnotherLoadInProgress3() {
-        loadInitialConfiguration()
+    fun testConcurrentLoadingWhileAnotherLoadInProgressABA2() {
+        assertAndLoadInitialConfiguration()
 
         makeChanges("A")
         assertDoAllBackgroundTaskAndDoWhileLoading {
@@ -78,7 +100,7 @@ class ScriptConfigurationLoadingTest : AbstractScriptConfigurationLoadingTest() 
     }
 
     fun testConcurrentLoadingWhileNotApplied() {
-        loadInitialConfiguration()
+        assertAndLoadInitialConfiguration()
 
         makeChanges("A")
 
@@ -92,14 +114,12 @@ class ScriptConfigurationLoadingTest : AbstractScriptConfigurationLoadingTest() 
         makeChanges("B")
         assertAndDoAllBackgroundTasks()
         assertSingleLoading()
-        assertAppliedConfiguration("A")
-
         assertAndApplySuggestedConfiguration()
         assertAppliedConfiguration("B")
     }
 
-    fun testConcurrentLoadingWhileNotApplied2() {
-        loadInitialConfiguration()
+    fun testConcurrentLoadingWhileNotAppliedABA() {
+        assertAndLoadInitialConfiguration()
 
         makeChanges("A")
 
@@ -122,8 +142,8 @@ class ScriptConfigurationLoadingTest : AbstractScriptConfigurationLoadingTest() 
         assertAppliedConfiguration("A")
     }
 
-    fun testConcurrentLoadingWhileNotApplied3() {
-        loadInitialConfiguration()
+    fun testConcurrentLoadingWhileNotAppliedABA2() {
+        assertAndLoadInitialConfiguration()
 
         makeChanges("A")
         assertAndDoAllBackgroundTasks()

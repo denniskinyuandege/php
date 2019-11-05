@@ -10,3 +10,4 @@ import com.intellij.openapi.vfs.VirtualFile
 lateinit var rootsIndexerTransaction: (() -> Unit) -> Unit
 var backgroundExecutorNewTaskHook: ((file: VirtualFile, actions: () -> Unit) -> Unit)? = null
 var testScriptConfigurationNotification: Boolean = true
+var inputsFromSourceForTesting = false

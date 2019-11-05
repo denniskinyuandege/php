@@ -13,6 +13,7 @@ import com.intellij.util.containers.HashSetQueue
 import org.jetbrains.kotlin.idea.core.script.ScriptConfigurationManager
 import org.jetbrains.kotlin.idea.core.script.applySuggestedScriptConfiguration
 import org.jetbrains.kotlin.idea.core.script.configuration.utils.backgroundExecutorNewTaskHook
+import org.jetbrains.kotlin.idea.core.script.configuration.utils.inputsFromSourceForTesting
 import org.jetbrains.kotlin.idea.core.script.configuration.utils.rootsIndexerTransaction
 import org.jetbrains.kotlin.idea.core.script.configuration.utils.testScriptConfigurationNotification
 import org.jetbrains.kotlin.idea.core.script.hasSuggestedScriptConfiguration
@@ -22,7 +23,7 @@ import org.jetbrains.kotlin.psi.KtFile
 open class AbstractScriptConfigurationLoadingTest : AbstractScriptConfigurationTest() {
     private val ktFile: KtFile get() = myFile as KtFile
     private val virtualFile get() = myFile.virtualFile
-    
+
     val backgroundQueue = HashSetQueue<BackgroundTask>()
     private lateinit var manager: ScriptConfigurationManager
 
@@ -62,6 +63,7 @@ open class AbstractScriptConfigurationLoadingTest : AbstractScriptConfigurationT
             backgroundQueue.add(BackgroundTask(file, actions))
         }
         testScriptConfigurationNotification = true
+        inputsFromSourceForTesting = true
 
         configureScriptFile("idea/testData/script/definition/loading/async/")
         manager = ServiceManager.getService(project, ScriptConfigurationManager::class.java)
@@ -71,6 +73,7 @@ open class AbstractScriptConfigurationLoadingTest : AbstractScriptConfigurationT
         super.tearDown()
         backgroundExecutorNewTaskHook = null
         testScriptConfigurationNotification = false
+        inputsFromSourceForTesting = false
         occurredLoadings = 0
         currentLoadingScriptConfigurationCallback = null
     }
@@ -84,6 +87,9 @@ open class AbstractScriptConfigurationLoadingTest : AbstractScriptConfigurationT
     }
 
     protected fun assertDoAllBackgroundTaskAndDoWhileLoading(actions: () -> Unit) {
+        // open loading semaphore
+        // wait loading done
+
         assertTrue(backgroundQueue.isNotEmpty())
 
         val copy = backgroundQueue.toList()
@@ -105,16 +111,25 @@ open class AbstractScriptConfigurationLoadingTest : AbstractScriptConfigurationT
     }
 
     protected fun assertAppliedConfiguration(contents: String) {
-        val secondConfiguration = manager.getConfiguration(ktFile)
-        assertEquals(listOf("x_${contents}"), secondConfiguration?.defaultImports)
+        val secondConfiguration = manager.getConfiguration(ktFile)!!
+        assertEquals(
+            contents,
+            secondConfiguration.defaultImports.single().let {
+                check(it.startsWith("x_"))
+                it.removePrefix("x_")
+            }
+        )
     }
 
     protected fun makeChanges(contents: String) {
         runWriteAction {
-            val documentManager = FileDocumentManager.getInstance()
-            val document = documentManager.getDocument(virtualFile)!!
+            val fileDocumentManager = FileDocumentManager.getInstance()
+            fileDocumentManager.reloadFiles(virtualFile)
+            val document = fileDocumentManager.getDocument(virtualFile)!!
             document.setText(contents)
-            documentManager.saveDocument(document)
+            fileDocumentManager.saveDocument(document)
+            psiManager.reloadFromDisk(myFile)
+            myFile = psiManager.findFile(virtualFile)
         }
 
         manager.updater.ensureUpToDatedConfigurationSuggested(ktFile)
@@ -142,7 +157,7 @@ open class AbstractScriptConfigurationLoadingTest : AbstractScriptConfigurationT
         occurredLoadings = 0
     }
 
-    protected fun loadInitialConfiguration() {
+    protected fun assertAndLoadInitialConfiguration() {
         assertNull(manager.getConfiguration(ktFile))
         assertAndDoAllBackgroundTasks()
         assertSingleLoading()

@@ -10,6 +10,7 @@ import com.intellij.openapi.vfs.VirtualFile
 import org.jetbrains.kotlin.idea.core.script.configuration.cache.CachedConfigurationInputs
 import org.jetbrains.kotlin.idea.core.script.configuration.cache.ScriptConfigurationSnapshot
 import org.jetbrains.kotlin.idea.core.script.configuration.utils.getKtFile
+import org.jetbrains.kotlin.idea.core.script.configuration.utils.inputsFromSourceForTesting
 import org.jetbrains.kotlin.idea.core.script.debug
 import org.jetbrains.kotlin.psi.KtFile
 import org.jetbrains.kotlin.scripting.definitions.KotlinScriptDefinition
@@ -63,6 +64,10 @@ open class DefaultScriptConfigurationLoader(val project: Project) : ScriptConfig
     }
 
     protected open fun getInputsStamp(virtualFile: VirtualFile, file: KtFile): CachedConfigurationInputs {
-        return CachedConfigurationInputs.PsiModificationStamp.get(project, virtualFile, file)
+        return if (inputsFromSourceForTesting) {
+            CachedConfigurationInputs.SourceContentsStamp.get(project, virtualFile, file)
+        } else {
+            CachedConfigurationInputs.PsiModificationStamp.get(project, virtualFile, file)
+        }
     }
 }

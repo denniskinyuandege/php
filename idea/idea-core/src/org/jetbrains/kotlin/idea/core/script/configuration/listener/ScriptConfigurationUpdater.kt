@@ -5,7 +5,6 @@
 
 package org.jetbrains.kotlin.idea.core.script.configuration.listener
 
-import com.intellij.openapi.vfs.VirtualFile
 import org.jetbrains.kotlin.psi.KtFile
 
 interface ScriptConfigurationUpdater {
