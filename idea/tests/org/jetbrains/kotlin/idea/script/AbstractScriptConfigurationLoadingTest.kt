@@ -8,6 +8,7 @@ package org.jetbrains.kotlin.idea.script
 import com.intellij.openapi.components.ServiceManager
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.vfs.VirtualFile
+import org.jetbrains.kotlin.idea.core.script.IdeScriptReportSink
 import org.jetbrains.kotlin.idea.core.script.ScriptConfigurationManager
 import org.jetbrains.kotlin.idea.core.script.applySuggestedScriptConfiguration
 import org.jetbrains.kotlin.idea.core.script.configuration.DefaultScriptConfigurationManagerExtensions
@@ -19,10 +20,10 @@ import org.jetbrains.kotlin.idea.util.application.runWriteAction
 import org.jetbrains.kotlin.psi.KtFile
 
 open class AbstractScriptConfigurationLoadingTest : AbstractScriptConfigurationTest() {
-    private val ktFile: KtFile get() = myFile as KtFile
-    private val virtualFile get() = myFile.virtualFile
+    val ktFile: KtFile get() = myFile as KtFile
+    val virtualFile get() = myFile.virtualFile
 
-    private lateinit var manager: ScriptConfigurationManager
+    lateinit var scriptConfigurationManager: ScriptConfigurationManager
 
     companion object {
         private var occurredLoadings = 0
@@ -48,7 +49,7 @@ open class AbstractScriptConfigurationLoadingTest : AbstractScriptConfigurationT
         )
 
         configureScriptFile("idea/testData/script/definition/loading/async/")
-        manager = ServiceManager.getService(project, ScriptConfigurationManager::class.java)
+        scriptConfigurationManager = ServiceManager.getService(project, ScriptConfigurationManager::class.java)
     }
 
     override fun tearDown() {
@@ -67,16 +68,20 @@ open class AbstractScriptConfigurationLoadingTest : AbstractScriptConfigurationT
     }
 
     protected fun assertDoAllBackgroundTaskAndDoWhileLoading(actions: () -> Unit) {
-        assertTrue(manager.testingBackgroundExecutor.doAllBackgroundTaskAndDoBefore {
+        assertTrue(doAllBackgroundTasksWith(actions))
+    }
+
+    protected fun doAllBackgroundTasksWith(actions: () -> Unit): Boolean {
+        return scriptConfigurationManager.testingBackgroundExecutor.doAllBackgroundTaskWith {
             currentLoadingScriptConfigurationCallback = {
                 actions()
                 currentLoadingScriptConfigurationCallback = null
             }
-        })
+        }
     }
 
     protected fun assertAppliedConfiguration(contents: String) {
-        val secondConfiguration = manager.getConfiguration(ktFile)!!
+        val secondConfiguration = scriptConfigurationManager.getConfiguration(ktFile)!!
         assertEquals(
             contents,
             secondConfiguration.defaultImports.single().let {
@@ -87,6 +92,12 @@ open class AbstractScriptConfigurationLoadingTest : AbstractScriptConfigurationT
     }
 
     protected fun makeChanges(contents: String) {
+        changeContents(contents)
+
+        scriptConfigurationManager.updater.ensureUpToDatedConfigurationSuggested(ktFile)
+    }
+
+    protected fun changeContents(contents: String) {
         runWriteAction {
             val fileDocumentManager = FileDocumentManager.getInstance()
             fileDocumentManager.reloadFiles(virtualFile)
@@ -96,8 +107,11 @@ open class AbstractScriptConfigurationLoadingTest : AbstractScriptConfigurationT
             psiManager.reloadFromDisk(myFile)
             myFile = psiManager.findFile(virtualFile)
         }
+    }
 
-        manager.updater.ensureUpToDatedConfigurationSuggested(ktFile)
+    protected fun assertReports(expected: String) {
+        val actual = IdeScriptReportSink.getReports(virtualFile).single().message
+        assertEquals(expected, actual)
     }
 
     protected fun assertSuggestedConfiguration() {
@@ -123,7 +137,7 @@ open class AbstractScriptConfigurationLoadingTest : AbstractScriptConfigurationT
     }
 
     protected fun assertAndLoadInitialConfiguration() {
-        assertNull(manager.getConfiguration(ktFile))
+        assertNull(scriptConfigurationManager.getConfiguration(ktFile))
         assertAndDoAllBackgroundTasks()
         assertSingleLoading()
         assertAppliedConfiguration("initial")

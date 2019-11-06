@@ -36,7 +36,7 @@ class TestingBackgroundExecutor internal constructor(
         backgroundQueue.add(BackgroundTask(key, actions))
     }
 
-    fun doAllBackgroundTaskAndDoBefore(actions: () -> Unit): Boolean {
+    fun doAllBackgroundTaskWith(actions: () -> Unit): Boolean {
         val copy = backgroundQueue.toList()
         backgroundQueue.clear()
 
