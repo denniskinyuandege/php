@@ -36,4 +36,5 @@ interface JvmLoweredDeclarationOrigin : IrDeclarationOrigin {
     object SUSPEND_FUNCTION_VIEW : IrDeclarationOriginImpl("SUSPEND_FUNCTION_VIEW")
     object SUSPEND_IMPL_STATIC_FUNCTION :  IrDeclarationOriginImpl("SUSPEND_IMPL_STATIC_FUNCTION", isSynthetic = true)
     object CONTINUATION_CLASS : IrDeclarationOriginImpl("CONTINUATION_CLASS")
+    object SUSPEND_LAMBDA : IrDeclarationOriginImpl("SUSPEND_LAMBDA")
 }

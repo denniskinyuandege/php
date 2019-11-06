@@ -6,9 +6,9 @@
 package org.jetbrains.kotlin.backend.jvm.codegen
 
 import org.jetbrains.kotlin.backend.jvm.JvmBackendContext
-import org.jetbrains.kotlin.backend.jvm.JvmLoweredDeclarationOrigin
 import org.jetbrains.kotlin.codegen.AsmUtil
 import org.jetbrains.kotlin.codegen.ClassBuilderMode
+import org.jetbrains.kotlin.codegen.coroutines.SUSPEND_IMPL_NAME_SUFFIX
 import org.jetbrains.kotlin.codegen.visitAnnotableParameterCount
 import org.jetbrains.kotlin.descriptors.Modality
 import org.jetbrains.kotlin.ir.declarations.*
@@ -43,6 +43,24 @@ open class FunctionCodegen(
         }
 
     private fun doGenerate(): JvmMethodGenericSignature {
+        fun psiElement(): KtElement =
+            if (irFunction.isSuspend) irFunction.symbol.descriptor.psiElement as KtElement
+            else context.suspendLambdaToOriginalFunctionMap[irFunction.parentAsClass.attributeOwnerId]!!.symbol.descriptor.psiElement as KtElement
+
+        fun IrFunction.hasContinuation(): Boolean = isSuspend &&
+                // We do not generate continuation and state-machine for synthetic accessors, bridges, and delegated members,
+                // in a sense, they are tail-call
+                !isKnownToBeTailCall() &&
+                // TODO: We should generate two versions of inline suspend function: one with state-machine and one without
+                !isInline &&
+                // This is suspend lambda parameter of inline function
+                origin != IrDeclarationOrigin.LOCAL_FUNCTION_FOR_LAMBDA &&
+                // Continuations are generated for suspendImpls
+                parentAsClass.declarations.filterIsInstance<IrFunction>().find { it.name.asString() == name.asString() + SUSPEND_IMPL_NAME_SUFFIX } == null
+
+        fun continuationClass(): IrClass =
+            irFunction.body!!.statements[0] as IrClass
+
         val functionView = irFunction.getOrCreateSuspendFunctionViewIfNeeded(context)
         val signature = classCodegen.methodSignatureMapper.mapSignatureWithGeneric(functionView)
 
@@ -72,30 +90,28 @@ open class FunctionCodegen(
             generateAnnotationDefaultValueIfNeeded(methodVisitor)
         } else {
             val frameMap = createFrameMapWithReceivers()
-            val irClass = context.suspendFunctionContinuations[irFunction]
-            val element = (irFunction.symbol.descriptor.psiElement
-                ?: context.suspendLambdaToOriginalFunctionMap[irFunction.parentAsClass.attributeOwnerId]?.symbol?.descriptor?.psiElement) as? KtElement
-            val continuationClassBuilder = context.continuationClassBuilders[irClass]
             methodVisitor = when {
-                irFunction.isSuspend &&
-                        // We do not generate continuation and state-machine for synthetic accessors, bridges, and delegated members,
-                        // in a sense, they are tail-call
-                        !irFunction.isKnownToBeTailCall() &&
-                        // TODO: We should generate two versions of inline suspend function: one with state-machine and one without
-                        !irFunction.isInline &&
-                        // This is suspend lambda parameter of inline function
-                        irFunction.origin != IrDeclarationOrigin.LOCAL_FUNCTION_FOR_LAMBDA ->
+                irFunction.hasContinuation() -> {
                     generateStateMachineForNamedFunction(
-                        irFunction, classCodegen, methodVisitor, flags, signature, continuationClassBuilder, element!!
+                        irFunction, classCodegen, methodVisitor,
+                        access = flags,
+                        signature = signature,
+                        obtainContinuationClassBuilder = {
+                            context.continuationClassBuilders[continuationClass().attributeOwnerId]!!
+                        },
+                        element = psiElement()
                     )
-                irFunction.isInvokeSuspendOfLambda(context) -> generateStateMachineForLambda(
-                    classCodegen, methodVisitor, flags, signature, element!!
+                }
+                irFunction.isInvokeSuspendOfLambda() -> generateStateMachineForLambda(
+                    classCodegen, methodVisitor, flags, signature, psiElement()
                 )
                 else -> methodVisitor
             }
             ExpressionCodegen(functionView, signature, frameMap, InstructionAdapter(methodVisitor), classCodegen, inlinedInto).generate()
             methodVisitor.visitMaxs(-1, -1)
-            continuationClassBuilder?.done()
+            if (irFunction.hasContinuation()) {
+                context.continuationClassBuilders[continuationClass().attributeOwnerId]!!.done()
+            }
         }
         methodVisitor.visitEnd()
 

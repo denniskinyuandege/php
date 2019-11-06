@@ -5,19 +5,13 @@
 
 package org.jetbrains.kotlin.backend.jvm.lower
 
-import org.jetbrains.kotlin.backend.common.FileLoweringPass
-import org.jetbrains.kotlin.backend.common.IrElementTransformerVoidWithContext
-import org.jetbrains.kotlin.backend.common.descriptors.synthesizedName
+import org.jetbrains.kotlin.backend.common.*
 import org.jetbrains.kotlin.backend.common.ir.*
 import org.jetbrains.kotlin.backend.common.lower.createIrBuilder
-import org.jetbrains.kotlin.backend.common.lower.parents
 import org.jetbrains.kotlin.backend.common.phaser.makeIrFilePhase
-import org.jetbrains.kotlin.backend.common.pop
-import org.jetbrains.kotlin.backend.common.push
 import org.jetbrains.kotlin.backend.jvm.JvmBackendContext
 import org.jetbrains.kotlin.backend.jvm.JvmLoweredDeclarationOrigin
 import org.jetbrains.kotlin.backend.jvm.codegen.isInlineIrBlock
-import org.jetbrains.kotlin.backend.jvm.codegen.isInvokeOfSuspendCallableReference
 import org.jetbrains.kotlin.codegen.coroutines.*
 import org.jetbrains.kotlin.codegen.inline.coroutines.FOR_INLINE_SUFFIX
 import org.jetbrains.kotlin.config.coroutinesPackageFqName
@@ -43,7 +37,6 @@ import org.jetbrains.kotlin.load.java.JavaVisibilities
 import org.jetbrains.kotlin.name.Name
 import org.jetbrains.kotlin.types.Variance
 import org.jetbrains.kotlin.util.OperatorNameConventions
-import org.jetbrains.kotlin.utils.addToStdlib.firstIsInstance
 
 internal val addContinuationPhase = makeIrFilePhase(
     ::AddContinuationLowering,
@@ -62,14 +55,15 @@ private class AddContinuationLowering(private val context: JvmBackendContext) : 
         context.getTopLevelClass(context.state.languageVersionSettings.coroutinesJvmInternalPackageFqName().child(Name.identifier("SuspendLambda")))
     }
 
+    private val overridableSuspendFunctions = mutableMapOf<IrFunction, IrClass>()
+
     override fun lower(irFile: IrFile) {
         val (suspendLambdas, inlineLambdas) = markSuspendLambdas(irFile)
-        val suspendFunctions = markSuspendFunctions(irFile, (suspendLambdas.map { it.function } + inlineLambdas).toSet())
-        transformReferencesToSuspendLambdas(irFile, suspendLambdas)
-        transformSuspendCalls(irFile)
-        for (suspendFunction in suspendFunctions) {
-            generateContinuationClassForNamedFunction(suspendFunction)
+        transformSuspendFunctions(irFile, (suspendLambdas.map { it.function } + inlineLambdas).toSet())
+        for ((function, parent) in overridableSuspendFunctions) {
+            parent.declarations.add(function)
         }
+        transformReferencesToSuspendLambdas(irFile, suspendLambdas)
     }
 
     private fun transformReferencesToSuspendLambdas(irFile: IrFile, suspendLambdas: List<SuspendLambdaInfo>) {
@@ -107,7 +101,7 @@ private class AddContinuationLowering(private val context: JvmBackendContext) : 
 
     private fun generateContinuationClassForLambda(info: SuspendLambdaInfo, parent: IrDeclarationParent): IrClass {
         val suspendLambda = suspendLambda.owner
-        return suspendLambda.createContinuationClassFor(info.function, parent).apply {
+        return suspendLambda.createContinuationClassFor(JvmLoweredDeclarationOrigin.SUSPEND_LAMBDA, parent).apply {
             copyAttributes(info.reference)
             val functionNClass = context.ir.symbols.getJvmFunctionClass(info.arity + 1)
             superTypes.add(
@@ -304,9 +298,9 @@ private class AddContinuationLowering(private val context: JvmBackendContext) : 
         }
     }
 
-    private fun IrClass.createContinuationClassFor(irFunction: IrFunction, parent: IrDeclarationParent): IrClass = buildClass {
-        name = "${irFunction.name}\$Continuation".synthesizedName
-        origin = JvmLoweredDeclarationOrigin.CONTINUATION_CLASS
+    private fun IrClass.createContinuationClassFor(newOrigin: IrDeclarationOrigin, parent: IrDeclarationParent): IrClass = buildClass {
+        name = Name.special("<Continuation>")
+        origin = newOrigin
         visibility = JavaVisibilities.PACKAGE_VISIBILITY
     }.also { irClass ->
         irClass.createImplicitParameterDeclarationWithWrappedDescriptor()
@@ -351,27 +345,23 @@ private class AddContinuationLowering(private val context: JvmBackendContext) : 
     private fun IrFunction.continuationType(): IrSimpleType =
         continuation.createType(true, listOf(makeTypeProjection(returnType, Variance.INVARIANT)))
 
-    private fun generateContinuationClassForNamedFunction(irFunction: IrFunction) {
-        val parent = irFunction.parents.firstIsInstance<IrDeclarationContainer>()
-        continuationImpl.owner.createContinuationClassFor(irFunction, parent).apply {
+    private fun generateContinuationClassForNamedFunction(irFunction: IrFunction, dispatchReceiverParameter: IrValueParameter?): IrClass {
+        return continuationImpl.owner.createContinuationClassFor(JvmLoweredDeclarationOrigin.CONTINUATION_CLASS, irFunction).apply {
             val resultField = addField(
                 context.state.languageVersionSettings.dataFieldName(),
                 context.irBuiltIns.anyType,
                 JavaVisibilities.PACKAGE_VISIBILITY
             )
-            parent.declarations.add(this)
-            val capturedThisField = irFunction.dispatchReceiverParameter?.let { addField("this\$0", it.type) }
+            val capturedThisField = dispatchReceiverParameter?.let { addField("this\$0", it.type) }
             val labelField = addField(COROUTINE_LABEL_FIELD_NAME, context.irBuiltIns.intType, JavaVisibilities.PACKAGE_VISIBILITY)
             addConstructorForNamedFunction(capturedThisField)
-            var function = irFunction
-            if (function is IrSimpleFunction && function.isOverridable && function.body != null) {
-                // Create static method for the suspend state machine method so that reentering the method
-                // does not lead to virtual dispatch to the wrong method.
-                context.suspendFunctionContinuations[function] = this
-                function = createStaticSuspendImpl(function)
-            }
-            addInvokeSuspendForNamedFunction(function, resultField, labelField, capturedThisField, function != irFunction)
-            context.suspendFunctionContinuations[function] = this
+            addInvokeSuspendForNamedFunction(
+                irFunction,
+                resultField,
+                labelField,
+                capturedThisField,
+                irFunction.origin == JvmLoweredDeclarationOrigin.SUSPEND_IMPL_STATIC_FUNCTION
+            )
         }
     }
 
@@ -469,7 +459,6 @@ private class AddContinuationLowering(private val context: JvmBackendContext) : 
             copyMetadata = false
         )
         copyBodyToStatic(irFunction, static)
-        (irFunction.parent as IrClass).declarations.add(static)
         // Rewrite the body of the original suspend method to forward to the new static method.
         irFunction.body = context.createIrBuilder(irFunction.symbol).irBlockBody {
             +irReturn(irCall(static).also {
@@ -495,25 +484,29 @@ private class AddContinuationLowering(private val context: JvmBackendContext) : 
     }
 
     // TODO: Generate two copies of inline suspend functions
-    private fun markSuspendFunctions(irFile: IrFile, suspendAndInlineLambdas: Set<IrFunction>): Set<IrFunction> {
-        val result = hashSetOf<IrFunction>()
+    private fun transformSuspendFunctions(irFile: IrFile, suspendAndInlineLambdas: Set<IrFunction>) {
+        irFile.transformChildrenVoid(object : IrElementTransformerVoid() {
+            override fun visitFunction(declaration: IrFunction): IrStatement {
+                var function = super.visitFunction(declaration) as IrFunction
+                if (!function.isSuspend || function in suspendAndInlineLambdas || function.isInline || function.body == null) return function
 
-        irFile.acceptChildrenVoid(object : IrElementVisitorVoid {
-            override fun visitElement(element: IrElement) {
-                element.acceptChildrenVoid(this)
-            }
-
-            override fun visitFunction(declaration: IrFunction) {
-                super.visitFunction(declaration)
-                if (declaration.isSuspend && declaration !in suspendAndInlineLambdas && !declaration.isInline &&
-                    !declaration.isInvokeOfSuspendCallableReference()
-                ) {
-                    result.add(declaration)
+                val dispatchReceiverParameter = function.dispatchReceiverParameter
+                if (function is IrSimpleFunction && function.isOverridable) {
+                    // Create static method for the suspend state machine method so that reentering the method
+                    // does not lead to virtual dispatch to the wrong method.
+                    overridableSuspendFunctions[function] = function.parentAsClass
+                    function = createStaticSuspendImpl(function)
                 }
+
+                function.body = context.createIrBuilder(function.symbol).irBlockBody {
+                    +generateContinuationClassForNamedFunction(function, dispatchReceiverParameter)
+                    for (statement in function.body!!.statements) {
+                        +statement
+                    }
+                }
+                return function
             }
         })
-
-        return result
     }
 
     private fun markSuspendLambdas(irElement: IrElement): Pair<List<SuspendLambdaInfo>, List<IrFunction>> {
@@ -572,23 +565,6 @@ private class AddContinuationLowering(private val context: JvmBackendContext) : 
             }
         })
         return suspendLambdas to inlineLambdas.map { it.symbol.owner }
-    }
-
-    private fun transformSuspendCalls(irFile: IrFile) {
-        irFile.transformChildrenVoid(object : IrElementTransformerVoid() {
-            private val functionStack = mutableListOf<IrFunction>()
-            override fun visitElement(element: IrElement): IrElement {
-                element.transformChildrenVoid(this)
-                return element
-            }
-
-            override fun visitFunction(declaration: IrFunction): IrStatement {
-                functionStack.push(declaration)
-                val res = super.visitFunction(declaration)
-                functionStack.pop()
-                return res
-            }
-        })
     }
 
     private class SuspendLambdaInfo(

@@ -50,19 +50,16 @@ internal fun generateStateMachineForNamedFunction(
     methodVisitor: MethodVisitor,
     access: Int,
     signature: JvmMethodGenericSignature,
-    continuationClassBuilder: ClassBuilder?,
+    obtainContinuationClassBuilder: () -> ClassBuilder,
     element: KtElement
 ): MethodVisitor {
     assert(irFunction.isSuspend)
-    assert(continuationClassBuilder != null) {
-        "Class builder for continuation is null"
-    }
     val state = classCodegen.state
     val languageVersionSettings = state.languageVersionSettings
     assert(languageVersionSettings.isReleaseCoroutines()) { "Experimental coroutines are unsupported in JVM_IR backend" }
     return CoroutineTransformerMethodVisitor(
         methodVisitor, access, signature.asmMethod.name, signature.asmMethod.descriptor, null, null,
-        obtainClassBuilderForCoroutineState = { continuationClassBuilder!! },
+        obtainClassBuilderForCoroutineState = obtainContinuationClassBuilder,
         reportSuspensionPointInsideMonitor = { reportSuspensionPointInsideMonitor(element, state, it) },
         lineNumber = CodegenUtil.getLineNumberForElement(element, false) ?: 0,
         sourceFile = classCodegen.irClass.file.name,
@@ -100,27 +97,17 @@ internal fun generateStateMachineForLambda(
     )
 }
 
-private fun IrDeclarationParent.isLoweredContinuationAnd(c: (IrClass) -> Boolean): Boolean = (this as? IrClass)?.let {
-    it.origin == JvmLoweredDeclarationOrigin.CONTINUATION_CLASS && c(it)
-} == true
+internal fun IrFunction.isInvokeSuspendOfLambda(): Boolean =
+    name.asString() == INVOKE_SUSPEND_METHOD_NAME && parentAsClass.origin == JvmLoweredDeclarationOrigin.SUSPEND_LAMBDA
 
-internal fun IrFunction.isInvokeSuspendOfLambda(context: JvmBackendContext): Boolean =
-    name.asString() == INVOKE_SUSPEND_METHOD_NAME &&
-            parent.isLoweredContinuationAnd { it.attributeOwnerId in context.suspendLambdaToOriginalFunctionMap }
+internal fun IrFunction.isInvokeSuspendForInlineOfLambda(): Boolean =
+    name.asString() == INVOKE_SUSPEND_METHOD_NAME + FOR_INLINE_SUFFIX && parentAsClass.origin == JvmLoweredDeclarationOrigin.SUSPEND_LAMBDA
 
-internal fun IrFunction.isInvokeSuspendForInlineOfLambda(context: JvmBackendContext): Boolean =
-    name.asString() == INVOKE_SUSPEND_METHOD_NAME + FOR_INLINE_SUFFIX &&
-            parent.isLoweredContinuationAnd { it.attributeOwnerId in context.suspendLambdaToOriginalFunctionMap }
-
-internal fun IrFunction.isInvokeOfSuspendLambda(context: JvmBackendContext): Boolean =
-    name.asString() == "invoke" &&
-            parent.isLoweredContinuationAnd { it.attributeOwnerId in context.suspendLambdaToOriginalFunctionMap }
-
-internal fun IrFunction.isInvokeSuspendOfContinuation(context: JvmBackendContext): Boolean =
-    name.asString() == INVOKE_SUSPEND_METHOD_NAME && parentAsClass in context.suspendFunctionContinuations.values
+internal fun IrFunction.isInvokeSuspendOfContinuation(): Boolean =
+    name.asString() == INVOKE_SUSPEND_METHOD_NAME && parentAsClass.origin == JvmLoweredDeclarationOrigin.CONTINUATION_CLASS
 
 internal fun IrFunction.isInvokeOfSuspendCallableReference(): Boolean = isSuspend && name.asString() == "invoke" &&
-        (parent as? IrClass)?.origin == JvmLoweredDeclarationOrigin.FUNCTION_REFERENCE_IMPL
+        parentAsClass.origin == JvmLoweredDeclarationOrigin.FUNCTION_REFERENCE_IMPL
 
 internal fun IrFunction.isKnownToBeTailCall(): Boolean =
     when (origin) {
@@ -134,8 +121,8 @@ internal fun IrFunction.isKnownToBeTailCall(): Boolean =
         else -> isInvokeOfSuspendCallableReference()
     }
 
-internal fun IrFunction.shouldNotContainSuspendMarkers(context: JvmBackendContext): Boolean =
-    isInvokeSuspendOfContinuation(context) || isKnownToBeTailCall()
+internal fun IrFunction.shouldNotContainSuspendMarkers(): Boolean =
+    isInvokeSuspendOfContinuation() || isKnownToBeTailCall()
 
 // Transform `suspend fun foo(params): RetType` into `fun foo(params, $completion: Continuation<RetType>): Any?`
 // the result is called 'view', just to be consistent with old backend.
@@ -217,8 +204,8 @@ internal fun IrCall.createSuspendFunctionCallViewIfNeeded(
         }
         val continuationParameter =
             when {
-                caller.isInvokeSuspendOfLambda(context) || caller.isInvokeSuspendOfContinuation(context) ||
-                        caller.isInvokeSuspendForInlineOfLambda(context) ->
+                caller.isInvokeSuspendOfLambda() || caller.isInvokeSuspendOfContinuation() ||
+                        caller.isInvokeSuspendForInlineOfLambda() ->
                     IrGetValueImpl(UNDEFINED_OFFSET, UNDEFINED_OFFSET, caller.dispatchReceiverParameter!!.symbol)
                 callerIsInlineLambda -> context.fakeContinuation
                 else -> IrGetValueImpl(UNDEFINED_OFFSET, UNDEFINED_OFFSET, caller.valueParameters.last().symbol)
