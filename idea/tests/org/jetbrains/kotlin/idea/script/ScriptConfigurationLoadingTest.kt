@@ -181,6 +181,22 @@ class ScriptConfigurationLoadingTest : AbstractScriptConfigurationLoadingTest() 
         assertReports("#BAD:A")
     }
 
+    fun testSuccessAfterFail() {
+        assertAndLoadInitialConfiguration()
+
+        makeChanges("#BAD:A")
+        assertAndDoAllBackgroundTasks()
+        assertSingleLoading()
+        assertNoSuggestedConfiguration()
+        assertReports("#BAD:A")
+
+        makeChanges("A")
+        assertAndDoAllBackgroundTasks()
+        assertSingleLoading()
+        assertSuggestedConfiguration()
+        assertReports("initial")
+    }
+
     fun testReportsOnSameConfiguration() {
         assertAndLoadInitialConfiguration()
 
