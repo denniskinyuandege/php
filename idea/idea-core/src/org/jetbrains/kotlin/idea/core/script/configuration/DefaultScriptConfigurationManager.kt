@@ -8,6 +8,8 @@ package org.jetbrains.kotlin.idea.core.script.configuration
 import com.intellij.codeInsight.daemon.DaemonCodeAnalyzer
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.ServiceManager
+import com.intellij.openapi.extensions.ExtensionPointName
+import com.intellij.openapi.extensions.Extensions
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.psi.PsiManager
@@ -15,6 +17,8 @@ import com.intellij.ui.EditorNotifications
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
 import org.jetbrains.kotlin.idea.core.script.*
+import org.jetbrains.kotlin.idea.core.script.configuration.DefaultScriptConfigurationManagerExtensions.LISTENER
+import org.jetbrains.kotlin.idea.core.script.configuration.DefaultScriptConfigurationManagerExtensions.LOADER
 import org.jetbrains.kotlin.idea.core.script.configuration.cache.ScriptConfigurationFileAttributeCache
 import org.jetbrains.kotlin.idea.core.script.configuration.cache.ScriptConfigurationMemoryCache
 import org.jetbrains.kotlin.idea.core.script.configuration.cache.ScriptConfigurationSnapshot
@@ -99,23 +103,25 @@ internal class DefaultScriptConfigurationManager(project: Project) :
     AbstractScriptConfigurationManager(project) {
     private val backgroundExecutor = BackgroundExecutor(project, rootsIndexer)
 
-    private val loaders: List<ScriptConfigurationLoader> = listOf(
-        ScriptOutsiderFileConfigurationLoader(project),
-        ScriptConfigurationFileAttributeCache(project),
-        GradleScriptConfigurationLoader(project),
-        DefaultScriptConfigurationLoader(project)
-    )
+    private val loaders: List<ScriptConfigurationLoader>
+        get() = listOf(
+            ScriptOutsiderFileConfigurationLoader(project),
+            ScriptConfigurationFileAttributeCache(project)
+        ) + project[LOADER] + listOf(
+            DefaultScriptConfigurationLoader(project)
+        )
 
-    private val listeners: List<ScriptChangeListener> = listOf(
-        GradleScriptListener(),
-        DefaultScriptChangeListener()
-    )
+    private val listeners: List<ScriptChangeListener>
+        get() = project[LISTENER] + listOf(DefaultScriptChangeListener())
 
     private val notifier = ScriptChangesNotifier(project, updater, listeners)
 
     private val saveLock = ReentrantLock()
 
     override fun createCache() = ScriptConfigurationMemoryCache(project)
+
+    private operator fun <T> Project.get(epName: ExtensionPointName<T>): List<T> =
+        Extensions.getArea(this).getExtensionPoint(epName).extensionList
 
     /**
      * Will be called on [cache] miss to initiate loading of [file]'s script configuration.
@@ -290,4 +296,12 @@ internal class DefaultScriptConfigurationManager(project: Project) :
             }
         }
     }
+}
+
+object DefaultScriptConfigurationManagerExtensions {
+    val LOADER: ExtensionPointName<ScriptConfigurationLoader> =
+        ExtensionPointName.create("org.jetbrains.kotlin.scripting.idea.loader")
+
+    val LISTENER: ExtensionPointName<ScriptChangeListener> =
+        ExtensionPointName.create("org.jetbrains.kotlin.scripting.idea.listener")
 }

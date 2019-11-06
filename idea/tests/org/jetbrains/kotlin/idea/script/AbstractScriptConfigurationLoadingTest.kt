@@ -12,8 +12,9 @@ import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.util.containers.HashSetQueue
 import org.jetbrains.kotlin.idea.core.script.ScriptConfigurationManager
 import org.jetbrains.kotlin.idea.core.script.applySuggestedScriptConfiguration
+import org.jetbrains.kotlin.idea.core.script.configuration.DefaultScriptConfigurationManagerExtensions
+import org.jetbrains.kotlin.idea.core.script.configuration.loader.FileContentsDependentConfigurationLoader
 import org.jetbrains.kotlin.idea.core.script.configuration.utils.backgroundExecutorNewTaskHook
-import org.jetbrains.kotlin.idea.core.script.configuration.utils.inputsFromSourceForTesting
 import org.jetbrains.kotlin.idea.core.script.configuration.utils.rootsIndexerTransaction
 import org.jetbrains.kotlin.idea.core.script.configuration.utils.testScriptConfigurationNotification
 import org.jetbrains.kotlin.idea.core.script.hasSuggestedScriptConfiguration
@@ -56,14 +57,19 @@ open class AbstractScriptConfigurationLoadingTest : AbstractScriptConfigurationT
         }
     }
 
-
     override fun setUp() {
         super.setUp()
         backgroundExecutorNewTaskHook = { file, actions ->
             backgroundQueue.add(BackgroundTask(file, actions))
         }
         testScriptConfigurationNotification = true
-        inputsFromSourceForTesting = true
+
+        addExtensionPointInTest(
+            DefaultScriptConfigurationManagerExtensions.LOADER,
+            project,
+            FileContentsDependentConfigurationLoader(project),
+            testRootDisposable
+        )
 
         configureScriptFile("idea/testData/script/definition/loading/async/")
         manager = ServiceManager.getService(project, ScriptConfigurationManager::class.java)
@@ -73,7 +79,6 @@ open class AbstractScriptConfigurationLoadingTest : AbstractScriptConfigurationT
         super.tearDown()
         backgroundExecutorNewTaskHook = null
         testScriptConfigurationNotification = false
-        inputsFromSourceForTesting = false
         occurredLoadings = 0
         currentLoadingScriptConfigurationCallback = null
     }
