@@ -50,7 +50,7 @@ class ScriptConfigurationMemoryCache(
     @Synchronized
     @Suppress("UNCHECKED_CAST")
     override fun allApplied() =
-        memoryCache.entrySet().map {
+        memoryCache.entrySet().mapNotNull {
             if (it.value.applied?.configuration == null) null
             else it.key to it.value.applied?.configuration
         } as Collection<Pair<VirtualFile, ScriptCompilationConfigurationWrapper>>
