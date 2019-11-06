@@ -5,17 +5,14 @@
 
 package org.jetbrains.kotlin.idea.script
 
-import com.intellij.openapi.application.impl.LaterInvocator
 import com.intellij.openapi.components.ServiceManager
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.vfs.VirtualFile
-import com.intellij.util.containers.HashSetQueue
 import org.jetbrains.kotlin.idea.core.script.ScriptConfigurationManager
 import org.jetbrains.kotlin.idea.core.script.applySuggestedScriptConfiguration
 import org.jetbrains.kotlin.idea.core.script.configuration.DefaultScriptConfigurationManagerExtensions
 import org.jetbrains.kotlin.idea.core.script.configuration.loader.FileContentsDependentConfigurationLoader
-import org.jetbrains.kotlin.idea.core.script.configuration.utils.backgroundExecutorNewTaskHook
-import org.jetbrains.kotlin.idea.core.script.configuration.utils.rootsIndexerTransaction
+import org.jetbrains.kotlin.idea.core.script.configuration.testingBackgroundExecutor
 import org.jetbrains.kotlin.idea.core.script.configuration.utils.testScriptConfigurationNotification
 import org.jetbrains.kotlin.idea.core.script.hasSuggestedScriptConfiguration
 import org.jetbrains.kotlin.idea.util.application.runWriteAction
@@ -25,25 +22,7 @@ open class AbstractScriptConfigurationLoadingTest : AbstractScriptConfigurationT
     private val ktFile: KtFile get() = myFile as KtFile
     private val virtualFile get() = myFile.virtualFile
 
-    val backgroundQueue = HashSetQueue<BackgroundTask>()
     private lateinit var manager: ScriptConfigurationManager
-
-    class BackgroundTask(val file: VirtualFile, val actions: () -> Unit) {
-        override fun equals(other: Any?): Boolean {
-            if (this === other) return true
-            if (javaClass != other?.javaClass) return false
-
-            other as BackgroundTask
-
-            if (file != other.file) return false
-
-            return true
-        }
-
-        override fun hashCode(): Int {
-            return file.hashCode()
-        }
-    }
 
     companion object {
         private var occurredLoadings = 0
@@ -59,9 +38,6 @@ open class AbstractScriptConfigurationLoadingTest : AbstractScriptConfigurationT
 
     override fun setUp() {
         super.setUp()
-        backgroundExecutorNewTaskHook = { file, actions ->
-            backgroundQueue.add(BackgroundTask(file, actions))
-        }
         testScriptConfigurationNotification = true
 
         addExtensionPointInTest(
@@ -77,7 +53,6 @@ open class AbstractScriptConfigurationLoadingTest : AbstractScriptConfigurationT
 
     override fun tearDown() {
         super.tearDown()
-        backgroundExecutorNewTaskHook = null
         testScriptConfigurationNotification = false
         occurredLoadings = 0
         currentLoadingScriptConfigurationCallback = null
@@ -92,27 +67,12 @@ open class AbstractScriptConfigurationLoadingTest : AbstractScriptConfigurationT
     }
 
     protected fun assertDoAllBackgroundTaskAndDoWhileLoading(actions: () -> Unit) {
-        // open loading semaphore
-        // wait loading done
-
-        assertTrue(backgroundQueue.isNotEmpty())
-
-        val copy = backgroundQueue.toList()
-        backgroundQueue.clear()
-
-        currentLoadingScriptConfigurationCallback = {
-            actions()
-            currentLoadingScriptConfigurationCallback = null
-        }
-
-        rootsIndexerTransaction {
-            copy.forEach {
-                it.actions()
+        assertTrue(manager.testingBackgroundExecutor.doAllBackgroundTaskAndDoBefore {
+            currentLoadingScriptConfigurationCallback = {
+                actions()
+                currentLoadingScriptConfigurationCallback = null
             }
-        }
-
-        LaterInvocator.ensureFlushRequested()
-        LaterInvocator.dispatchPendingFlushes()
+        })
     }
 
     protected fun assertAppliedConfiguration(contents: String) {

@@ -6,10 +6,7 @@
 package org.jetbrains.kotlin.idea.core.script.configuration.utils
 
 import com.intellij.openapi.application.Application
-import com.intellij.openapi.vfs.VirtualFile
 
-lateinit var rootsIndexerTransaction: (() -> Unit) -> Unit
-var backgroundExecutorNewTaskHook: ((file: VirtualFile, actions: () -> Unit) -> Unit)? = null
 var testScriptConfigurationNotification: Boolean = true
 
 val Application.isUnitTestModeWithoutScriptLoadingNotification: Boolean

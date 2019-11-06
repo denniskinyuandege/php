@@ -30,6 +30,8 @@ import org.jetbrains.kotlin.idea.core.script.configuration.loader.ScriptConfigur
 import org.jetbrains.kotlin.idea.core.script.configuration.loader.ScriptConfigurationLoadingContext
 import org.jetbrains.kotlin.idea.core.script.configuration.loader.ScriptOutsiderFileConfigurationLoader
 import org.jetbrains.kotlin.idea.core.script.configuration.utils.BackgroundExecutor
+import org.jetbrains.kotlin.idea.core.script.configuration.utils.DefaultBackgroundExecutor
+import org.jetbrains.kotlin.idea.core.script.configuration.utils.TestingBackgroundExecutor
 import org.jetbrains.kotlin.idea.core.script.configuration.utils.isUnitTestModeWithoutScriptLoadingNotification
 import org.jetbrains.kotlin.idea.core.script.settings.KotlinScriptingSettings
 import org.jetbrains.kotlin.idea.core.util.EDT
@@ -100,7 +102,10 @@ import kotlin.script.experimental.api.ScriptDiagnostic
  */
 internal class DefaultScriptConfigurationManager(project: Project) :
     AbstractScriptConfigurationManager(project) {
-    private val backgroundExecutor = BackgroundExecutor(project, rootsIndexer)
+
+    internal val backgroundExecutor: BackgroundExecutor =
+        if (ApplicationManager.getApplication().isUnitTestMode) TestingBackgroundExecutor(rootsIndexer)
+        else DefaultBackgroundExecutor(project, rootsIndexer)
 
     private val loaders: List<ScriptConfigurationLoader>
         get() = listOf(
@@ -304,3 +309,6 @@ object DefaultScriptConfigurationManagerExtensions {
     val LISTENER: ExtensionPointName<ScriptChangeListener> =
         ExtensionPointName.create("org.jetbrains.kotlin.scripting.idea.listener")
 }
+
+val ScriptConfigurationManager.testingBackgroundExecutor
+    get() = (this as DefaultScriptConfigurationManager).backgroundExecutor as TestingBackgroundExecutor
