@@ -17,7 +17,6 @@ import com.intellij.ui.EditorNotifications
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
 import org.jetbrains.kotlin.idea.core.script.*
-import org.jetbrains.kotlin.idea.core.script.configuration.DefaultScriptConfigurationManagerExtensions.LISTENER
 import org.jetbrains.kotlin.idea.core.script.configuration.DefaultScriptConfigurationManagerExtensions.LOADER
 import org.jetbrains.kotlin.idea.core.script.configuration.cache.ScriptConfigurationFileAttributeCache
 import org.jetbrains.kotlin.idea.core.script.configuration.cache.ScriptConfigurationMemoryCache
@@ -31,7 +30,7 @@ import org.jetbrains.kotlin.idea.core.script.configuration.loader.ScriptConfigur
 import org.jetbrains.kotlin.idea.core.script.configuration.loader.ScriptConfigurationLoadingContext
 import org.jetbrains.kotlin.idea.core.script.configuration.loader.ScriptOutsiderFileConfigurationLoader
 import org.jetbrains.kotlin.idea.core.script.configuration.utils.BackgroundExecutor
-import org.jetbrains.kotlin.idea.core.script.configuration.utils.testScriptConfigurationNotification
+import org.jetbrains.kotlin.idea.core.script.configuration.utils.isUnitTestModeWithoutScriptLoadingNotification
 import org.jetbrains.kotlin.idea.core.script.settings.KotlinScriptingSettings
 import org.jetbrains.kotlin.idea.core.util.EDT
 import org.jetbrains.kotlin.psi.KtFile
@@ -112,7 +111,7 @@ internal class DefaultScriptConfigurationManager(project: Project) :
         )
 
     private val listeners: List<ScriptChangeListener>
-        get() = project[LISTENER] + listOf(DefaultScriptChangeListener())
+        get() = project[DefaultScriptConfigurationManagerExtensions.LISTENER] + listOf(DefaultScriptChangeListener())
 
     private val notifier = ScriptChangesNotifier(project, updater, listeners)
 
@@ -247,7 +246,7 @@ internal class DefaultScriptConfigurationManager(project: Project) :
                     val autoReload = skipNotification
                             || oldConfiguration == null
                             || KotlinScriptingSettings.getInstance(project).isAutoReloadEnabled
-                            || (ApplicationManager.getApplication().isUnitTestMode && !testScriptConfigurationNotification)
+                            || ApplicationManager.getApplication().isUnitTestModeWithoutScriptLoadingNotification
 
                     if (autoReload) {
                         if (oldConfiguration != null) {
