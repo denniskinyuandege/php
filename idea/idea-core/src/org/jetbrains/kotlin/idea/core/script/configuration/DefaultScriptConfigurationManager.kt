@@ -107,10 +107,11 @@ internal class DefaultScriptConfigurationManager(project: Project) :
         if (ApplicationManager.getApplication().isUnitTestMode) TestingBackgroundExecutor(rootsIndexer)
         else DefaultBackgroundExecutor(project, rootsIndexer)
 
+    private val fileAttributeCache = ScriptConfigurationFileAttributeCache(project)
     private val loaders: List<ScriptConfigurationLoader>
         get() = listOf(
             ScriptOutsiderFileConfigurationLoader(project),
-            ScriptConfigurationFileAttributeCache(project)
+            fileAttributeCache
         ) + project[LOADER] + listOf(
             DefaultScriptConfigurationLoader(project)
         )
@@ -122,7 +123,12 @@ internal class DefaultScriptConfigurationManager(project: Project) :
 
     private val saveLock = ReentrantLock()
 
-    override fun createCache() = ScriptConfigurationMemoryCache(project)
+    override fun createCache() = object : ScriptConfigurationMemoryCache(project) {
+        override fun setLoaded(file: VirtualFile, configurationSnapshot: ScriptConfigurationSnapshot) {
+            super.setLoaded(file, configurationSnapshot)
+            fileAttributeCache.save(file, configurationSnapshot.configuration)
+        }
+    }
 
     private operator fun <T> Project.get(epName: ExtensionPointName<T>): List<T> =
         Extensions.getArea(this).getExtensionPoint(epName).extensionList
