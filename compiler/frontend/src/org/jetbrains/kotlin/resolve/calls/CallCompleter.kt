@@ -76,21 +76,25 @@ class CallCompleter(
             completeAllCandidates(context, results)
         }
 
-        if (context.trace.wantsDiagnostics() && resolvedCall != null) {
-            val calleeExpression = if (resolvedCall is VariableAsFunctionResolvedCall)
-                resolvedCall.variableCall.call.calleeExpression
-            else
-                resolvedCall.call.calleeExpression
-            val reportOn =
-                if (calleeExpression != null && !calleeExpression.isFakeElement) calleeExpression
-                else resolvedCall.call.callElement
+        if (context.trace.wantsDiagnostics()) {
+            if (resolvedCall == null) {
+                checkMissingSupertypes(context, moduleDescriptor)
+            } else {
+                val calleeExpression = if (resolvedCall is VariableAsFunctionResolvedCall)
+                    resolvedCall.variableCall.call.calleeExpression
+                else
+                    resolvedCall.call.calleeExpression
+                val reportOn =
+                    if (calleeExpression != null && !calleeExpression.isFakeElement) calleeExpression
+                    else resolvedCall.call.callElement
 
-            val callCheckerContext = CallCheckerContext(context, deprecationResolver, moduleDescriptor)
-            for (callChecker in callCheckers) {
-                callChecker.check(resolvedCall, reportOn, callCheckerContext)
+                val callCheckerContext = CallCheckerContext(context, deprecationResolver, moduleDescriptor)
+                for (callChecker in callCheckers) {
+                    callChecker.check(resolvedCall, reportOn, callCheckerContext)
 
-                if (resolvedCall is VariableAsFunctionResolvedCall) {
-                    callChecker.check(resolvedCall.variableCall, reportOn, callCheckerContext)
+                    if (resolvedCall is VariableAsFunctionResolvedCall) {
+                        callChecker.check(resolvedCall.variableCall, reportOn, callCheckerContext)
+                    }
                 }
             }
         }
