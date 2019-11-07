@@ -32,6 +32,7 @@ import org.jetbrains.kotlin.metadata.jvm.deserialization.JvmBytecodeBinaryVersio
 import org.jetbrains.kotlin.psi.KtFile
 import org.jetbrains.kotlin.resolve.AnalyzingUtils
 import org.jetbrains.kotlin.resolve.BindingContext
+import org.jetbrains.kotlin.resolve.BindingContext.INCOMPLETE_HIERARCHY
 import org.jetbrains.kotlin.resolve.DescriptorToSourceUtils
 import org.jetbrains.kotlin.resolve.DescriptorUtils
 import org.jetbrains.kotlin.resolve.checkers.ExperimentalUsageChecker
@@ -48,7 +49,7 @@ class AnalyzerWithCompilerReport(
 
     private fun reportIncompleteHierarchies() {
         val bindingContext = analysisResult.bindingContext
-        val classes = bindingContext.getKeys(TraceBasedErrorReporter.INCOMPLETE_HIERARCHY)
+        val classes = bindingContext.getKeys(INCOMPLETE_HIERARCHY)
         if (!classes.isEmpty()) {
             val message = StringBuilder(
                 "Supertypes of the following classes cannot be resolved. " +
@@ -56,7 +57,7 @@ class AnalyzerWithCompilerReport(
             )
             for (descriptor in classes) {
                 val fqName = DescriptorUtils.getFqName(descriptor).asString()
-                val unresolved = bindingContext.get(TraceBasedErrorReporter.INCOMPLETE_HIERARCHY, descriptor)
+                val unresolved = bindingContext.get(INCOMPLETE_HIERARCHY, descriptor)
                 assert(unresolved != null && !unresolved.isEmpty()) {
                     "Incomplete hierarchy should be reported with names of unresolved superclasses: $fqName"
                 }
