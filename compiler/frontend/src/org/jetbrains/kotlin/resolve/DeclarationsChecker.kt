@@ -31,6 +31,7 @@ import org.jetbrains.kotlin.diagnostics.Errors.*
 import org.jetbrains.kotlin.lexer.KtTokens
 import org.jetbrains.kotlin.psi.*
 import org.jetbrains.kotlin.psi.psiUtil.hasActualModifier
+import org.jetbrains.kotlin.psi.psiUtil.isAbstract
 import org.jetbrains.kotlin.psi.psiUtil.visibilityModifier
 import org.jetbrains.kotlin.resolve.BindingContext.*
 import org.jetbrains.kotlin.resolve.DescriptorUtils.classCanHaveAbstractDeclaration
@@ -40,6 +41,7 @@ import org.jetbrains.kotlin.resolve.checkers.PlatformDiagnosticSuppressor
 import org.jetbrains.kotlin.resolve.descriptorUtil.builtIns
 import org.jetbrains.kotlin.resolve.descriptorUtil.isAnnotationConstructor
 import org.jetbrains.kotlin.resolve.descriptorUtil.isEffectivelyExternal
+import org.jetbrains.kotlin.resolve.descriptorUtil.module
 import org.jetbrains.kotlin.resolve.inline.isInlineOnly
 import org.jetbrains.kotlin.resolve.source.KotlinSourceElement
 import org.jetbrains.kotlin.types.*
@@ -316,6 +318,7 @@ class DeclarationsChecker(
         checkSupertypesForConsistency(classDescriptor, classOrObject)
         checkLocalAnnotation(classDescriptor, classOrObject)
         checkTypesInClassHeader(classOrObject)
+        checkAbstractSuperClasses(classOrObject, classDescriptor)
 
         when (classOrObject) {
             is KtClass -> {
@@ -373,6 +376,22 @@ class DeclarationsChecker(
 
         for (request in upperBoundCheckRequests) {
             DescriptorResolver.checkBounds(request.upperBound, request.upperBoundType, trace)
+        }
+    }
+
+    private fun checkAbstractSuperClasses(classOrObject: KtClassOrObject, classDescriptor: ClassDescriptor) {
+        if (classOrObject is KtClass && classOrObject.isAbstract()) return
+        classDescriptor.typeConstructor.supertypes.forEach { superType ->
+            val superDescriptor = TypeUtils.getClassDescriptor(superType) ?: return@forEach
+            if (superDescriptor.modality == Modality.ABSTRACT) {
+                if (superDescriptor.module != classDescriptor.module) {
+                    superDescriptor.unsubstitutedMemberScope.getContributedDescriptors().forEach { memberDescriptor ->
+                        if (memberDescriptor is CallableMemberDescriptor && memberDescriptor.modality == Modality.ABSTRACT && memberDescriptor.visibility == Visibilities.INTERNAL) {
+                            trace.report(SUPER_CLASS_HAS_INVISIBLE_ABSTRACT_MEMBER.on(classOrObject, classDescriptor, superDescriptor, memberDescriptor))
+                        }
+                    }
+                }
+            }
         }
     }
 

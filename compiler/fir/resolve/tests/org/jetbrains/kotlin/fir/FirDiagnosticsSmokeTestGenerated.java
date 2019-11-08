@@ -23550,6 +23550,24 @@ public class FirDiagnosticsSmokeTestGenerated extends AbstractFirDiagnosticsSmok
         }
     }
 
+    @TestMetadata("compiler/testData/diagnostics/tests/visibility")
+    @TestDataPath("$PROJECT_ROOT")
+    @RunWith(JUnit3RunnerWithInners.class)
+    public static class Visibility extends AbstractFirDiagnosticsSmokeTest {
+        private void runTest(String testDataFilePath) throws Exception {
+            KotlinTestUtils.runTest(this::doTest, this, testDataFilePath);
+        }
+
+        @TestMetadata("abstractInvisibleMemberFromKotlin.kt")
+        public void testAbstractInvisibleMemberFromKotlin() throws Exception {
+            runTest("compiler/testData/diagnostics/tests/visibility/abstractInvisibleMemberFromKotlin.kt");
+        }
+
+        public void testAllFilesPresentInVisibility() throws Exception {
+            KotlinTestUtils.assertAllTestsPresentByMetadata(this.getClass(), new File("compiler/testData/diagnostics/tests/visibility"), Pattern.compile("^(.+)\\.kt$"), true);
+        }
+    }
+
     @TestMetadata("compiler/testData/diagnostics/tests/when")
     @TestDataPath("$PROJECT_ROOT")
     @RunWith(JUnit3RunnerWithInners.class)
